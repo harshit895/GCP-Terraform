@@ -1,9 +1,9 @@
 ### General Variables ###
-project_id = "PROJECT_ID"
+project_id = "fdfsf-ai"
 region     = "us-central1"
 
 
-## Network Variables ###
+# ## Network Variables ###
 vpc_name = "ghfdgsdf"
 subnets = {
   "private-1" = {
@@ -73,62 +73,70 @@ firewall_rules = {
   ]
 }
 peerings = {
-  enabled = false
+  enabled = true
   connections = [
     {
       name                                = "vpctovpc"
-      network_self                        = "https://www.googleapis.com/compute/v1/projects/PROJECT_ID/global/networks/ghfdgsdf"
-      peer_network                        = "https://www.googleapis.com/compute/v1/projects/PROJECT_ID/global/networks/default"
+      network_self                        = "https://www.googleapis.com/compute/v1/projects/elliott-ai/global/networks/ghfdgsdf"
+      peer_network                        = "https://www.googleapis.com/compute/v1/projects/elliott-ai/global/networks/default"
       stack_type                          = "IPV4_ONLY"
       update_strategy                     = "INDEPENDENT"
       import_subnet_routes_with_public_ip = true
-    }
+    },
+    {
+      name                                = "dsfds"
+      network_self                        = "https://www.googleapis.com/compute/v1/projects/elliott-ai/global/networks/ghfdgsdf"
+      peer_network                        = "https://www.googleapis.com/compute/v1/projects/elliott-ai/global/networks/default"
+      stack_type                          = "IPV4_ONLY"
+      update_strategy                     = "INDEPENDENT"
+      import_subnet_routes_with_public_ip = true
+    },
   ]
 }
 
 ### Compute Variables ####
 instances = {
   private-01 = {
-    name                 = "app-01"
-    machine_type         = "e2-medium"
-    disk_image           = "projects/debian-cloud/global/images/family/debian-12"
-    boot_disk_type       = "pd-balanced"
-    auto_delete_bootdisk = false
-    subnet_name          = "https://www.googleapis.com/compute/v1/projects/PROJECT_ID/regions/us-central1/subnetworks/default"
-    zone                 = "us-central1-a"
-    tags                 = ["private-vpc-access"]
-    boot_disk_size_gb    = 16
-    custom_private_ip    = true
-    private_ip           = "10.128.0.54"
-    set_hostname         = true
-    hostname             = "myhostsd.fdsd.com"
-    vm_username          = "fdsfs"
-    additional_disk_type = "pd-standard"
-    additional_disk_name = "data-disk-01"
-    additional_disk_size = 14
+    name                    = "app-01"
+    machine_type            = "e2-medium"
+    disk_image              = "projects/debian-cloud/global/images/family/debian-12"
+    boot_disk_type          = "pd-balanced"
+    boot_disk_size_gb       = 20
+    auto_delete_bootdisk    = true
+    subnet_name             = "https://www.googleapis.com/compute/v1/projects/elliott-ai/regions/us-central1/subnetworks/default"
+    zone                    = "us-central1-a"
+    tags                    = ["private-vpc-access"]
+    custom_private_ip       = true
+    private_ip              = "10.128.0.54"
+    set_hostname            = true
+    hostname                = "myhostsd.fdsd.com"
+    vm_username             = "fdsfs"
+    enable_additional_disks = false
+
   }
   public-01 = {
-    name                 = "bastion-01"
-    machine_type         = "e2-medium"
-    disk_image           = "projects/debian-cloud/global/images/family/debian-12"
-    boot_disk_type       = "pd-standard"
-    auto_delete_bootdisk = false
-    subnet_name          = "https://www.googleapis.com/compute/v1/projects/PROJECT_ID/regions/us-central1/subnetworks/default"
-    assign_external_ip   = "true"
-    zone                 = "us-central1-b"
-    tags                 = ["bastion-access"]
-    boot_disk_size_gb    = 11
-    custom_private_ip    = false
-    set_hostname         = false
-    vm_username          = "hgfhd"
-    additional_disk_type = "pd-balanced"
-    additional_disk_name = "data-disk-03"
-    additional_disk_size = 11
+    name                    = "bastion-01"
+    machine_type            = "e2-medium"
+    disk_image              = "projects/debian-cloud/global/images/family/debian-12"
+    boot_disk_type          = "pd-standard"
+    auto_delete_bootdisk    = true
+    subnet_name             = "https://www.googleapis.com/compute/v1/projects/elliott-ai/regions/us-central1/subnetworks/default"
+    assign_external_ip      = "true"
+    zone                    = "us-central1-b"
+    tags                    = ["bastion-access"]
+    boot_disk_size_gb       = 11
+    custom_private_ip       = false
+    set_hostname            = false
+    vm_username             = "hgfhd"
+    enable_additional_disks = true
+    additional_disks = [
+      { name = "data-disk1", size = 10, type = "pd-balanced" },
+      { name = "data-disk2", size = 15, type = "pd-ssd" }
+    ]
   }
 }
-enable_backup_plan     = true
-vm_backup_plan         = "projects/PROJECT_ID/locations/us-central1/backupPlans/fsdf"
-enable_additional_disk = false
+enable_backup_plan = true
+vm_backup_plan     = "projects/elliott-ai/locations/us-central1/backupPlans/fsdf"
 
 
 # ### CloudSQL Variables
@@ -139,7 +147,7 @@ db_instances = {
     disk_size_gb     = 30
     disk_type        = "PD_SSD"
     region           = "us-central1"
-    network          = "projects/PROJECT_ID/global/networks/ghfdgsdf"
+    network          = "projects/elliott-ai/global/networks/ghfdgsdf"
     ssl_mode         = "ALLOW_UNENCRYPTED_AND_ENCRYPTED"
 
     settings = {
@@ -170,23 +178,23 @@ gke_clusters = {
     region        = "us-central1"
     zones         = ["us-central1-a", "us-central1-c"]
 
-    kubernetes_version = "1.33.5-gke.1125000"
+    kubernetes_version = "1.34.1-gke.3355002"
     release_channel    = "REGULAR"
 
     # VPC + Subnet
-    network            = "projects/PROJECT_ID/global/networks/ghfdgsdf"
-    subnetwork         = "projects/PROJECT_ID/regions/us-central1/subnetworks/private-1"
-    maintenance_window = "2025-12-08T02:00:00Z"
+    network            = "projects/elliott-ai/global/networks/ghfdgsdf"
+    subnetwork         = "projects/elliott-ai/regions/us-central1/subnetworks/private-1"
+    maintenance_window = "2025-12-18T02:00:00Z"
 
     # Optional – depends on your updated network module
     pods_secondary_range_name     = "private-1-pods"
     services_secondary_range_name = "private-1-services"
 
     # Private cluster
-    enable_private_endpoint = false
-    enable_private_nodes    = true
-    master_ipv4_cidr_block  = "172.16.0.0/28"
-
+    enable_private_endpoint           = false
+    enable_private_nodes              = true
+    master_ipv4_cidr_block            = "172.16.0.0/28"
+    enable_master_authorized_networks = false
     authorized_networks = [
       {
         name = "office"
@@ -212,7 +220,7 @@ gke_clusters = {
     enable_cost_allocation       = true
     enable_secret_manager        = true
 
-    project_id = "PROJECT_ID"
+    project_id = "elliott-ai"
 
     node_pools = {
       general = {
@@ -258,18 +266,64 @@ filestores = {
   filestore1 = {
     filestore_name    = "dem-filestore"
     tier              = "BASIC_HDD"
-    filestore_size_gb = 1024
+    filestore_size_gb = 1536
     reserved_ip_range = "10.20.30.0/29"
     file_share_name   = "test"
     zone              = "us-central1-a"
+    vpc_name          = "default"
   }
   filestore2 = {
     filestore_name    = "filedsadstore"
     tier              = "BASIC_HDD"
     filestore_size_gb = 1024
-
+    vpc_name          = "default"
     reserved_ip_range = "10.20.10.0/29"
     file_share_name   = "dssad"
     zone              = "us-central1-a"
   }
+}
+
+
+#### Redis #####
+
+redis_clusters = {
+  app = {
+    name                    = "cache-app"
+    region                  = "us-central1"
+    shard_count             = 3
+    replica_count           = 1
+    node_type               = "REDIS_SHARED_CORE_NANO"
+    authorization_mode      = "AUTH_MODE_IAM_AUTH"
+    transit_encryption_mode = "TRANSIT_ENCRYPTION_MODE_SERVER_AUTHENTICATION"
+    network                 = "projects/elliott-ai/global/networks/ghfdgsdf"
+    subnets                 = ["projects/elliott-ai/regions/us-central1/subnetworks/private-1"]
+
+    zone_distribution = {
+      mode = "MULTI_ZONE"
+    }
+
+    persistence_config = {
+      mode = "RDB"
+      rdb_config = {
+        rdb_snapshot_period = "TWELVE_HOURS"
+      }
+    }
+
+    redis_configs = {
+      "maxmemory-policy" = "allkeys-lru"
+    }
+
+  }
+
+  # auth-cache = {
+  #   name       = "cache-auth"
+  #   region     = "us-central1"
+  #   shard_count  = 2
+  #   replica_count = 1
+  #   network = "projects/elliott-ai/global/networks/ghfdgsdf"
+  #   zone_distribution = {
+  #     mode = "SINGLE_ZONE"
+  #     zone = "us-central1-c"
+  #   }
+  # }
 }

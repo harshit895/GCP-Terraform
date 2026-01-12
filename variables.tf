@@ -40,32 +40,35 @@ variable "nat_logging" {
 variable "vpc_name" {
   type        = string
   description = "Name of the VPC"
-  default = "test-vpc"
-  }
+  default     = "test-vpc"
+}
 
 
 variable "instances" {
   description = "Map of instance definitions. key => {name, machine_type, disk_image, subnet, tags, metadata, service_account_email, assign_external_ip (optional)}"
   type = map(object({
-    name                 = string
-    machine_type         = string
-    boot_disk_type       = optional(string)
-    disk_image           = string
-    subnet_name          = string
-    zone                 = string
-    tags                 = optional(list(string), [])
-    metadata             = optional(map(string), {})
-    assign_external_ip   = optional(bool, false)
-    boot_disk_size_gb    = optional(number, 50)
-    private_ip           = optional(string)
-    custom_private_ip    = bool
-    hostname             = optional(string)
-    set_hostname         = bool
-    vm_username          = optional(string)
-    additional_disk_type = optional(string)
-    additional_disk_name = optional(string)
-    additional_disk_size = optional(string)
-    auto_delete_bootdisk = optional(bool, true)
+    name                    = string
+    machine_type            = string
+    boot_disk_type          = optional(string)
+    disk_image              = string
+    subnet_name             = string
+    zone                    = string
+    tags                    = optional(list(string), [])
+    metadata                = optional(map(string), {})
+    assign_external_ip      = optional(bool, false)
+    boot_disk_size_gb       = optional(number, 50)
+    private_ip              = optional(string)
+    custom_private_ip       = bool
+    hostname                = optional(string)
+    set_hostname            = bool
+    vm_username             = optional(string)
+    auto_delete_bootdisk    = optional(bool, true)
+    enable_additional_disks = optional(bool, false)
+    additional_disks = optional(list(object({
+      name = string
+      size = number
+      type = string
+    })), [])
   }))
   default = {
     private-01 = {
@@ -195,11 +198,6 @@ variable "enable_backup_plan" {
   description = "Enable/Disable backup plan"
 }
 
-variable "enable_additional_disk" {
-  type    = bool
-  default = false
-}
-
 variable "file_share_name" {
   type    = string
   default = "file_share"
@@ -214,6 +212,7 @@ variable "filestores" {
     reserved_ip_range = optional(string)
     file_share_name   = optional(string)
     zone              = optional(string)
+    vpc_name          = optional(string)
   }))
   default = {
     filestore1 = {
@@ -223,6 +222,7 @@ variable "filestores" {
       reserved_ip_range = "10.20.30.0/29"
       file_share_name   = "test"
       zone              = "us-central1-a"
+      vpc_name          = "default"
     }
   }
 }
@@ -260,7 +260,7 @@ variable "db_instances" {
       disk_size_gb     = 10
       disk_type        = "PD_SSD"
       region           = "asia-south1"
-      network          = "projects/PROJECT_ID/global/networks/fdfss"
+      network          = "projects/elliott-ai/global/networks/fdfss"
 
       settings = {
         db_user           = "orders_user"
@@ -292,9 +292,10 @@ variable "gke_clusters" {
     services_secondary_range_name = string
 
     # Private cluster new settings
-    master_ipv4_cidr_block  = optional(string, null)
-    enable_private_nodes    = bool
-    enable_private_endpoint = bool
+    master_ipv4_cidr_block            = optional(string, null)
+    enable_private_nodes              = bool
+    enable_private_endpoint           = bool
+    enable_master_authorized_networks = bool
     authorized_networks = list(object({
       name = string
       cidr = string
@@ -349,4 +350,36 @@ variable "proxy_subnets" {
   }))
   default     = {}
   description = "Map of proxy-only subnets for regional load balancing"
+}
+
+variable "redis_clusters" {
+  description = "Map of Redis cluster definitions"
+  type = map(object({
+    name                    = string
+    region                  = string
+    shard_count             = number # Number of shards
+    replica_count           = optional(number, 1)
+    node_type               = optional(string, "REDIS_SHARED_CORE_NANO")
+    authorization_mode      = optional(string, "AUTH_MODE_DISABLED")
+    transit_encryption_mode = optional(string, "TRANSIT_ENCRYPTION_MODE_DISABLED")
+    network                 = string # PSC consumer network self_link
+    subnets                 = list(string)
+
+    # Optional zone distribution
+    zone_distribution = optional(object({
+      mode = string           # MULTI_ZONE | SINGLE_ZONE
+      zone = optional(string) # required if SINGLE_ZONE
+    }), null)
+
+    persistence_config = optional(object({
+      mode = string # DISABLED | RDB
+      rdb_config = optional(object({
+        rdb_snapshot_period = string
+      }))
+    }))
+
+    # Optional Redis configuration map
+    redis_configs = optional(map(string), {})
+
+  }))
 }

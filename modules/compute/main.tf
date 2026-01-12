@@ -1,7 +1,30 @@
 resource "google_service_account" "compute_sa" {
-  account_id   = "preprod-compute-sa"
+  account_id   = "preprod-wallyt-compute-sa"
   display_name = "Compute service account for instances"
   project      = var.project
+}
+
+locals {
+  disks_map = {
+    for d in flatten([
+      for vm_key, vm in var.instances :
+      (
+        lookup(vm, "enable_additional_disks", false)
+        ? [
+          for disk in vm.additional_disks :
+          {
+            vm_key = vm_key
+            zone   = vm.zone
+            name   = disk.name
+            size   = disk.size
+            type   = disk.type
+          }
+        ]
+        : []
+      )
+    ]) :
+    "${d.vm_key}-${d.name}" => d
+  }
 }
 
 resource "google_compute_instance" "vm" {
@@ -13,18 +36,26 @@ resource "google_compute_instance" "vm" {
 
   boot_disk {
     auto_delete = each.value.auto_delete_bootdisk
-    initialize_params {
-      image = each.value.disk_image
-      size  = each.value.boot_disk_size_gb
-      type  = each.value.boot_disk_type
-    }
+    source      = google_compute_disk.boot_disk[each.key].self_link
   }
   hostname = lookup(each.value, "set_hostname", false) ? each.value.hostname : null
 
-  attached_disk {
-    source      = google_compute_disk.additional_disk["${each.key}"].id
-    mode        = "READ_WRITE"
-    device_name = each.value.additional_disk_name
+  dynamic "attached_disk" {
+    for_each = (
+      lookup(each.value, "enable_additional_disks", false)
+      ? [
+        for k, d in local.disks_map :
+        d
+        if d.vm_key == each.key
+      ]
+      : []
+    )
+
+    content {
+      source      = google_compute_disk.additional_disk["${each.key}-${attached_disk.value.name}"].id
+      mode        = "READ_WRITE"
+      device_name = attached_disk.value.name
+    }
   }
 
   network_interface {
@@ -73,7 +104,11 @@ resource "google_secret_manager_secret" "ssh_key_secret" {
   project   = var.project
 
   replication {
-    auto {}
+    user_managed {
+      replicas {
+        location = "me-central2"
+      }
+    }
   }
 }
 
@@ -85,13 +120,23 @@ resource "google_secret_manager_secret_version" "ssh_key_secret_version" {
 }
 
 resource "google_compute_disk" "additional_disk" {
-  for_each = var.instances
-  name     = each.value.additional_disk_name
-  type     = each.value.additional_disk_type
-  size     = each.value.additional_disk_size
-  zone     = each.value.zone
+  for_each = local.disks_map
+
+  name = each.value.name
+  type = each.value.type
+  size = each.value.size
+  zone = each.value.zone
 }
 
+resource "google_compute_disk" "boot_disk" {
+  for_each = var.instances
+
+  name  = "${each.value.name}-boot"
+  type  = each.value.boot_disk_type
+  zone  = each.value.zone
+  size  = each.value.boot_disk_size_gb # Can be increased later WITHOUT RECREATE
+  image = each.value.disk_image
+}
 
 resource "google_backup_dr_backup_plan_association" "backup-plan-association" {
   for_each                   = var.enable_backup_plan ? var.instances : {}

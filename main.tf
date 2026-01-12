@@ -12,13 +12,12 @@ module "network" {
 }
 
 module "compute" {
-  source                 = "./modules/compute"
-  project                = var.project_id
-  region                 = var.region
-  instances              = var.instances
-  vm_backup_plan         = var.vm_backup_plan
-  enable_backup_plan     = var.enable_backup_plan
-  enable_additional_disk = var.enable_additional_disk
+  source             = "./modules/compute"
+  project            = var.project_id
+  region             = var.region
+  instances          = var.instances
+  vm_backup_plan     = var.vm_backup_plan
+  enable_backup_plan = var.enable_backup_plan
 }
 
 module "cloudsql" {
@@ -29,7 +28,7 @@ module "cloudsql" {
 }
 
 module "gke" {
-  source = "./modules/gke"
+  source       = "./modules/gke"
   gke_clusters = var.gke_clusters
 }
 
@@ -38,5 +37,11 @@ module "filestore" {
 
   project_id = var.project_id
   filestores = var.filestores
-  network    = module.network.vpc_id
+}
+
+module "redis" {
+  source     = "./modules/redis"
+  project_id = var.project_id
+
+  redis_clusters = var.redis_clusters
 }

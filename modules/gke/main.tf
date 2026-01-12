@@ -31,12 +31,18 @@ resource "google_container_cluster" "gke" {
     }
   }
 
-  master_authorized_networks_config {
-    dynamic "cidr_blocks" {
-      for_each = lookup(each.value, "authorized_networks", [])
-      content {
-        cidr_block   = cidr_blocks.value.cidr
-        display_name = cidr_blocks.value.name
+  dynamic "master_authorized_networks_config" {
+    for_each = each.value.enable_master_authorized_networks ? [1] : []
+
+    content {
+      private_endpoint_enforcement_enabled = false
+      dynamic "cidr_blocks" {
+        for_each = lookup(each.value, "authorized_networks", [])
+
+        content {
+          cidr_block   = cidr_blocks.value.cidr
+          display_name = cidr_blocks.value.name
+        }
       }
     }
   }
@@ -128,9 +134,9 @@ resource "google_container_node_pool" "pools" {
     ]) : "${combo.cluster_name}-${combo.pool_name}" => combo
   }
 
-  name     = each.value.pool_name
-  cluster  = google_container_cluster.gke[each.value.cluster_name].name
-  location = each.value.cluster.location_type == "zonal" ? each.value.cluster.zones[0] : each.value.cluster.region
+  name           = each.value.pool_name
+  cluster        = google_container_cluster.gke[each.value.cluster_name].name
+  location       = each.value.cluster.location_type == "zonal" ? each.value.cluster.zones[0] : each.value.cluster.region
   node_locations = each.value.cluster.location_type == "zonal" ? each.value.cluster.zones : null
 
 
