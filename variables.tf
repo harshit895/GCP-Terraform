@@ -3,20 +3,6 @@ variable "project_id" {
   description = "Name of the Project"
 }
 
-variable "subnets" {
-  description = "Map of subnets to create"
-  type = map(object({
-    cidr           = string
-    private_access = optional(bool, true)
-
-    # NEW FIELDS
-    enable_secondary = optional(bool, false)
-    pod_cidr_range   = optional(string)
-    svc_cidr_range   = optional(string)
-  }))
-  default = null
-}
-
 variable "routing_mode" {
   type    = string
   default = "GLOBAL"
@@ -86,24 +72,6 @@ variable "instances" {
   }
 }
 
-variable "firewall_rules" {
-  description = "EOF Combined firewall rule configuration"
-
-  type = object({
-    enabled = bool
-    rules = optional(list(object({
-      name        = string
-      direction   = string
-      ranges      = list(string)
-      target_tags = list(string)
-      ports       = list(string)
-      protocol    = string
-      priority    = optional(number, 1000)
-    })), [])
-  })
-  default = null
-}
-
 variable "peerings" {
   description = "Peering configuration object"
   type = object({
@@ -167,23 +135,6 @@ variable "master_ipv4_cidr" {
 variable "master_authorized_ranges" {
   type    = list(string)
   default = []
-}
-
-variable "private_service_ranges" {
-  description = "Configuration for Private Service Access ranges"
-  type = object({
-    enabled = bool
-    psa = list(object({
-      name                           = string
-      ip_address                     = string
-      private_services_prefix_length = number
-    }))
-  })
-
-  default = {
-    enabled = false
-    psa     = []
-  }
 }
 
 variable "vm_backup_plan" {
@@ -342,18 +293,9 @@ variable "enable_proxy_subnets" {
   description = "Enable creation of proxy-only subnets for load balancing"
 }
 
-variable "proxy_subnets" {
-  type = map(object({
-    cidr    = string
-    region  = string
-    purpose = string
-  }))
-  default     = {}
-  description = "Map of proxy-only subnets for regional load balancing"
-}
-
 variable "redis_clusters" {
   description = "Map of Redis cluster definitions"
+  default = null
   type = map(object({
     name                    = string
     region                  = string
@@ -382,4 +324,68 @@ variable "redis_clusters" {
     redis_configs = optional(map(string), {})
 
   }))
+}
+
+variable "vpcs" {
+  description = "Map of VPCs (key = vpc_name)"
+  type = map(object({
+    project      = string
+    routing_mode = string
+    region       = string
+  }))
+  default = {}
+}
+
+variable "subnets" {
+  description = "Subnets per VPC: subnets[vpc_name][subnet_name] = config"
+  type = map(map(object({
+    cidr             = string
+    region           = optional(string)
+    private_access   = optional(bool, true)
+    enable_secondary = optional(bool, true)
+    pod_cidr_range   = optional(string)
+    svc_cidr_range   = optional(string)
+  })))
+  default = {}
+}
+
+
+variable "proxy_subnets" {
+  description = "Proxy subnets per VPC"
+  type = map(map(object({
+    cidr    = string
+    region  = string
+    purpose = string
+  })))
+  default = {}
+}
+
+variable "private_service_ranges" {
+  description = "Private service ranges per VPC"
+  type = map(object({
+    enabled = bool
+    psa = list(object({
+      name                           = string
+      ip_address                     = string
+      private_services_prefix_length = number
+    }))
+  }))
+  default = {}
+}
+
+variable "firewall_rules" {
+  description = "Firewall rules per VPC"
+  type = map(object({
+    enabled = bool
+    rules = list(object({
+      name        = string
+      direction   = string
+      priority    = optional(number, 1000)
+      ranges      = list(string)
+      target_tags = list(string)
+      protocol    = string
+      ports       = list(string)
+    }))
+  }))
+  default = {}
 }
