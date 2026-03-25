@@ -1,31 +1,123 @@
-# Create VPC
-resource "google_compute_network" "vpc" {
-  project                 = var.project
-  name                    = var.vpc_name
-  auto_create_subnetworks = false
-  routing_mode            = var.routing_mode
+locals {
+  # Backward‑compatible VPC map
+  effective_vpcs = length(var.vpcs) > 0 ? var.vpcs : {
+    (var.vpc_name) = {
+      project      = var.project
+      routing_mode = var.routing_mode
+      region       = var.region
+    }
+  }
+
+  # Handle legacy single‑VPC configs (your exact format)
+  is_single_vpc_mode = length(var.vpcs) == 0
+
+  # Subnets: legacy flat map → single VPC entry
+  effective_subnets = local.is_single_vpc_mode ? {
+    (var.vpc_name) = var.subnets
+  } : var.subnets
+
+  # Proxy subnets: legacy flat map → single VPC entry  
+  effective_proxy_subnets = local.is_single_vpc_mode ? {
+    (var.vpc_name) = var.proxy_subnets
+  } : var.proxy_subnets
+
+  # Private service ranges: legacy object → single VPC entry
+  effective_private_service_ranges = local.is_single_vpc_mode ? {
+    (var.vpc_name) = var.private_service_ranges
+  } : var.private_service_ranges
+
+  # Firewall rules: legacy object → single VPC entry
+  effective_firewall_rules = local.is_single_vpc_mode ? {
+    (var.vpc_name) = var.firewall_rules
+  } : var.firewall_rules
+
+  # ✅ FIXED: Flatten subnets using flatten() + setunion()
+  subnet_flat = flatten([
+    for vpc_name, subnet_map in local.effective_subnets : [
+      for subnet_name, cfg in subnet_map : {
+        key         = "${vpc_name}/${subnet_name}"
+        vpc_name    = vpc_name
+        subnet_name = subnet_name
+        config      = cfg
+      }
+    ]
+  ])
+  subnet_map = { for item in local.subnet_flat : item.key => merge(item.config, {
+    vpc_name    = item.vpc_name
+    subnet_name = item.subnet_name
+  }) }
+
+  # ✅ FIXED: Flatten proxy subnets
+  proxy_subnet_flat = flatten([
+    for vpc_name, subnet_map in local.effective_proxy_subnets : [
+      for subnet_name, cfg in subnet_map : {
+        key         = "${vpc_name}/${subnet_name}"
+        vpc_name    = vpc_name
+        subnet_name = subnet_name
+        config      = cfg
+      }
+    ]
+  ])
+  proxy_subnet_map = var.enable_proxy_subnets ? { for item in local.proxy_subnet_flat : item.key => merge(item.config, {
+    vpc_name    = item.vpc_name
+    subnet_name = item.subnet_name
+  }) } : {}
+
+  # ✅ FIXED: Flatten firewall rules
+  firewall_rule_flat = flatten([
+    for vpc_name, cfg in local.effective_firewall_rules : cfg.enabled ? [
+      for rule in cfg.rules : {
+        key      = "${vpc_name}/${rule.name}"
+        vpc_name = vpc_name
+        rule     = rule
+      }
+    ] : []
+  ])
+  firewall_rule_map = { for item in local.firewall_rule_flat : item.key => merge(item.rule, {
+    vpc_name = item.vpc_name
+  }) }
+
+  # PSA
+  create_psa = {
+    for vpc_name, cfg in local.effective_private_service_ranges :
+    vpc_name => cfg
+    if lookup(cfg, "enabled", false)
+  }
+
+  peering_map = var.peerings.enabled ? {
+    for p in var.peerings.connections : p.name => p
+  } : {}
 }
 
-# Create subnets public & private as per provided map
-resource "google_compute_subnetwork" "subnets" {
-  for_each = var.subnets
+# ... all resources unchanged below ...
 
-  name                     = each.key
+resource "google_compute_network" "vpc" {
+  for_each                = local.effective_vpcs
+  project                 = each.value.project
+  name                    = each.key
+  auto_create_subnetworks = false
+  routing_mode            = each.value.routing_mode
+}
+
+resource "google_compute_subnetwork" "subnets" {
+  for_each = local.subnet_map
+
+  name                     = each.value.subnet_name
   ip_cidr_range            = each.value.cidr
-  region                   = var.region
-  network                  = google_compute_network.vpc.id
+  region                   = lookup(each.value, "region", local.effective_vpcs[each.value.vpc_name].region)
+  network                  = google_compute_network.vpc[each.value.vpc_name].id
   private_ip_google_access = lookup(each.value, "private_access", true)
-  project                  = var.project
+  project                  = local.effective_vpcs[each.value.vpc_name].project
 
   dynamic "secondary_ip_range" {
     for_each = lookup(each.value, "enable_secondary", true) ? [
       {
-        range_name    = "${each.key}-pods"
-        ip_cidr_range = each.value.pod_cidr_range
+        range_name    = "${each.value.subnet_name}-pods"
+        ip_cidr_range = lookup(each.value, "pod_cidr_range", null)
       },
       {
-        range_name    = "${each.key}-services"
-        ip_cidr_range = each.value.svc_cidr_range
+        range_name    = "${each.value.subnet_name}-services"
+        ip_cidr_range = lookup(each.value, "svc_cidr_range", null)
       }
     ] : []
 
@@ -37,27 +129,16 @@ resource "google_compute_subnetwork" "subnets" {
 }
 
 resource "google_compute_subnetwork" "proxy_subnets" {
-  for_each = var.enable_proxy_subnets ? var.proxy_subnets : {}
+  for_each = local.proxy_subnet_map
 
-  name          = "${each.key}-proxy"
+  name          = "${each.value.subnet_name}-proxy"
   ip_cidr_range = each.value.cidr
   region        = each.value.region
-  project       = var.project
-  network       = google_compute_network.vpc.id
+  project       = local.effective_vpcs[each.value.vpc_name].project
+  network       = google_compute_network.vpc[each.value.vpc_name].id
 
   purpose = each.value.purpose
   role    = "ACTIVE"
-
-  depends_on = [google_compute_network.vpc]
-}
-
-
-# Enable private service connection (for Cloud SQL private IP) - consumer
-resource "google_service_networking_connection" "private_vpc_connection" {
-  for_each                = local.create_psa
-  network                 = google_compute_network.vpc.id
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.private_range[each.key].name]
 }
 
 resource "google_compute_global_address" "private_range" {
@@ -65,58 +146,57 @@ resource "google_compute_global_address" "private_range" {
   name          = each.key
   purpose       = "VPC_PEERING"
   address_type  = "INTERNAL"
-  prefix_length = each.value.private_services_prefix_length
-  network       = google_compute_network.vpc.id
+  prefix_length = lookup(each.value.psa[0], "private_services_prefix_length", 24)
+  network       = google_compute_network.vpc[each.key].id
   ip_version    = "IPV4"
-  address       = each.value.ip_address
+  address       = lookup(each.value.psa[0], "ip_address", null)
 }
 
+resource "google_service_networking_connection" "private_vpc_connection" {
+  for_each                = local.create_psa
+  network                 = google_compute_network.vpc[each.key].id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_range[each.key].name]
+}
 
-# Cloud NAT for private subnets
 resource "google_compute_router" "nat_router" {
-  name    = "${var.vpc_name}-nat-router"
-  network = google_compute_network.vpc.id
-  region  = var.region
-  project = var.project
+  for_each = local.effective_vpcs
+
+  name    = "${each.key}-nat-router"
+  network = google_compute_network.vpc[each.key].id
+  region  = each.value.region
+  project = each.value.project
 }
 
 resource "google_compute_router_nat" "cloud_nat" {
-  name                               = "${var.vpc_name}-cloud-nat"
-  router                             = google_compute_router.nat_router.name
-  region                             = var.region
-  project                            = var.project
+  for_each = local.effective_vpcs
+
+  name                               = "${each.key}-cloud-nat"
+  router                             = google_compute_router.nat_router[each.key].name
+  region                             = each.value.region
+  project                            = each.value.project
   nat_ip_allocate_option             = "AUTO_ONLY"
   source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
+
   dynamic "subnetwork" {
     for_each = {
-      for name, cfg in var.subnets :
-      name => cfg
-      if lookup(cfg, "private_access", true) == true
+      for k, cfg in google_compute_subnetwork.subnets :
+      k => cfg
+      if split("/", k)[0] == each.key
     }
+
     content {
-      name                    = google_compute_subnetwork.subnets[subnetwork.key].id
+      name                    = subnetwork.value.id
       source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
     }
   }
 }
 
-locals {
-  create_rules = var.firewall_rules.enabled ? {
-    for r in var.firewall_rules.rules : r.name => r
-  } : {}
-  create_psa = var.private_service_ranges.enabled ? {
-    for r in var.private_service_ranges.psa : r.name => r
-  } : {}
-  peering_map = var.peerings.enabled ? {
-    for p in var.peerings.connections : p.name => p
-  } : {}
-}
-
 resource "google_compute_firewall" "rules" {
-  for_each = local.create_rules
+  for_each = local.firewall_rule_map
 
-  name    = each.key
-  network = google_compute_network.vpc.self_link
+  name    = each.value.name
+  network = google_compute_network.vpc[each.value.vpc_name].self_link
 
   direction     = each.value.direction
   priority      = each.value.priority

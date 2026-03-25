@@ -1,0 +1,124 @@
+name: PR Preview DNS Management
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+jobs:
+  preview-name:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Build preview slug from PR number
+        id: slug
+        run: |
+          PR="${{ github.event.number }}"
+          SLUG="pr-${PR}"
+          echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+          echo "preview=${SLUG}.${{ vars.PREVIEW_DOMAIN }}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update DNS record
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          RECORD_NAME: ${{ steps.slug.outputs.preview }}
+          RECORD_TARGET: ${{ vars.PREVIEW_ALB_DNS }}
+        run: |
+          echo $RECORD_NAME
+          EXISTING_ID=$(
+            curl -sf -X GET \
+              "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records?type=CNAME&name=${RECORD_NAME}&content=${RECORD_TARGET}" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+            | jq -r '.result[0].id // empty'
+          )
+
+          if [ -n "${EXISTING_ID}" ]; then
+            echo "::notice::DNS already exists, skipping: ${RECORD_NAME} → ${RECORD_TARGET}"
+            exit 0
+          fi
+
+          # Create new record
+          RESP=$(
+            curl -sf -X POST \
+              "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "{\"type\":\"CNAME\",\"name\":\"${RECORD_NAME}\",\"content\":\"${RECORD_TARGET}\",\"proxied\":true}"
+          )
+          echo "API response: $RESP"
+          echo "::notice::Created DNS: ${RECORD_NAME} → ${RECORD_TARGET}"
+
+      - name: Post preview URL to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const slug = '${{ steps.slug.outputs.slug }}';
+            const fqdn = '${{ steps.slug.outputs.preview }}';
+            const body = `### Preview Environment Details:\n**URL:** https://${fqdn}\n**Branch:** \`${{ github.head_ref }}\`\n**Commit:** \`${{ github.sha }}\``;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes('### Preview Environment'));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  # ═══════════════════════════════════════════════════════════════════
+  # PR CLOSED — Delete preview DNS record + cleanup
+  # Runs on merge or close — removes the Cloudflare CNAME
+  # ═══════════════════════════════════════════════════════════════════
+  cleanup-preview:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Build preview slug from PR number
+        id: slug
+        run: |
+          PR="${{ github.event.number }}"
+          SLUG="pr-${PR}"
+          echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+          echo "preview=${SLUG}.${{ vars.PREVIEW_DOMAIN }}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete DNS record
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          RECORD_NAME: ${{ steps.slug.outputs.preview }}
+        run: |
+          RECORD_ID=$(curl -s -X GET \
+            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records?type=CNAME&name=${RECORD_NAME}" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            | jq -r '.result[0].id // empty')
+
+          if [ -n "$RECORD_ID" ]; then
+            curl -sf -X DELETE \
+              "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records/${RECORD_ID}" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -H "Content-Type: application/json"
+            echo "::notice::Deleted DNS record: ${RECORD_NAME}"
+          else
+            echo "No DNS record found for ${RECORD_NAME}, nothing to delete"
+          fi
+

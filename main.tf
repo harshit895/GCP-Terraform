@@ -1,15 +1,14 @@
 module "network" {
-  source                 = "./modules/network"
-  project                = var.project_id
-  vpc_name               = var.vpc_name
-  subnets                = var.subnets
-  region                 = var.region
-  firewall_rules         = var.firewall_rules
-  peerings               = var.peerings
+  source               = "./modules/network"
+  vpcs                 = var.vpcs
+  subnets              = var.subnets
+  proxy_subnets        = var.proxy_subnets
   private_service_ranges = var.private_service_ranges
-  proxy_subnets          = var.proxy_subnets
-  enable_proxy_subnets   = var.enable_proxy_subnets
+  firewall_rules       = var.firewall_rules
+  peerings             = var.peerings
+  enable_proxy_subnets = var.enable_proxy_subnets
 }
+
 
 module "compute" {
   source             = "./modules/compute"
