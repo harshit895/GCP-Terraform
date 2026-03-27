@@ -53,7 +53,11 @@ resource "google_secret_manager_secret" "db_secret" {
 
   secret_id = "${each.key}-password"
   replication {
-    auto {}
+    user_managed {
+      replicas {
+        location = "me-central2"
+      }
+    }
   }
 }
 

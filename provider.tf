@@ -7,7 +7,7 @@ terraform {
     }
   }
   backend "gcs" {
-    bucket = "TF_STATE_BUCKET"
+    bucket = "sdacloud-run-volume"
     prefix = "terraform/state"
   }
 

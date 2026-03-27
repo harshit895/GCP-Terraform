@@ -9,7 +9,7 @@ resource "google_filestore_instance" "filestore" {
     name        = each.value.file_share_name
   }
   networks {
-    network           = var.network
+    network           = each.value.vpc_name
     modes             = ["MODE_IPV4"]
     reserved_ip_range = each.value.reserved_ip_range
   }

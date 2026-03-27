@@ -17,9 +17,10 @@ variable "gke_clusters" {
     services_secondary_range_name = string
 
     # Private cluster new settings
-    enable_private_nodes    = bool
-    enable_private_endpoint = bool
-    master_ipv4_cidr_block  = optional(string, null)
+    enable_private_nodes              = bool
+    enable_private_endpoint           = bool
+    master_ipv4_cidr_block            = optional(string, null)
+    enable_master_authorized_networks = bool
     authorized_networks = list(object({
       name = string
       cidr = string
